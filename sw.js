@@ -1,4 +1,4 @@
-const CACHE_NAME = "fii-smart-v8";
+const CACHE_NAME = "fii-smart-v9";
 const APP_SHELL = [
   "./", "./index.html", "./manifest.json", "./icon-192.png",
   "./icon-512.png", "./icon-maskable-512.png", "./apple-touch-icon.png", "./favicon.ico"
