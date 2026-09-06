@@ -9,12 +9,189 @@
 <dialog id="fundDialog"><h2 id="fundTitle">Adicionar FII</h2><form method="dialog"><div class="formGrid" id="fundForm"></div><div class="actions"><button class="btn alt" value="cancel">Cancelar</button><button type="button" class="btn" onclick="saveFund()">Salvar e analisar</button></div></form></dialog>
 <dialog id="moveDialog"><h2>Registrar movimentação</h2><form method="dialog"><div class="formGrid" id="moveForm"></div><div class="actions"><button class="btn alt" value="cancel">Cancelar</button><button type="button" class="btn" onclick="saveMove()">Salvar</button></div></form></dialog>
 <script>
+const FII_API_URL =
+  "https://fii-smart-api.fernando-dynamo.workers.dev";
+  async function fetchFundData(ticker) {
+  const normalizedTicker = ticker
+    .trim()
+    .toUpperCase();
+
+  const response = await fetch(
+    `${FII_API_URL}/fii?ticker=${encodeURIComponent(normalizedTicker)}`
+  );
+
+  const data = await response.json();
+
+  if (!response.ok || data.error) {
+    throw new Error(
+      data.message || "Não foi possível atualizar o FII."
+    );
+  }
+
+  return data;
+}
+  async function updateFundFormFromApi() {
+  const tickerInput =
+    document.getElementById("f_ticker");
+
+  const ticker = tickerInput.value
+    .trim()
+    .toUpperCase();
+
+  if (!ticker) {
+    alert("Informe primeiro o ticker.");
+    return;
+  }
+
+  const button =
+    document.getElementById("fetchFundButton");
+
+  const originalText = button.textContent;
+
+  try {
+    button.disabled = true;
+    button.textContent = "Atualizando...";
+
+    const data = await fetchFundData(ticker);
+
+    if (data.price !== null) {
+      document.getElementById("f_price").value =
+        data.price;
+    }
+
+    if (data.dividendYield12m !== null) {
+      document.getElementById("f_dy").value =
+        data.dividendYield12m;
+    }
+
+    if (data.performance12m !== null) {
+      document.getElementById("f_perf").value =
+        data.performance12m;
+    }
+
+    if (data.priceToNav !== null) {
+      document.getElementById("f_pvp").value =
+        data.priceToNav;
+    }
+
+    document.getElementById("f_source").value =
+      data.source || "brapi.dev";
+
+    const referenceDate =
+      data.referenceDate || data.updatedAt;
+
+    if (referenceDate) {
+      document.getElementById("f_updated").value =
+        referenceDate.slice(0, 10);
+    }
+
+    alert(
+      `${ticker} atualizado com sucesso. ` +
+      "Confira os dados antes de salvar."
+    );
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }async function updateAllFunds() {
+  if (!db.funds.length) {
+    alert("Não há FIIs cadastrados.");
+    return;
+  }
+
+  const button =
+    document.getElementById("updateAllButton");
+
+  const originalText = button.textContent;
+
+  let updated = 0;
+  let failed = 0;
+
+  try {
+    button.disabled = true;
+
+    for (let index = 0;
+         index < db.funds.length;
+         index++) {
+      const fund = db.funds[index];
+
+      button.textContent =
+        `Atualizando ${index + 1}/${db.funds.length}`;
+
+      try {
+        const data =
+          await fetchFundData(fund.ticker);
+
+        if (data.price !== null) {
+          fund.price = Number(data.price);
+        }
+
+        if (data.dividendYield12m !== null) {
+          fund.dy =
+            Number(data.dividendYield12m);
+        }
+
+        if (data.performance12m !== null) {
+          fund.perf =
+            Number(data.performance12m);
+        }
+
+        if (data.priceToNav !== null) {
+          fund.pvp =
+            Number(data.priceToNav);
+        }
+
+        fund.source =
+          data.source || "brapi.dev";
+
+        fund.updated =
+          (
+            data.referenceDate ||
+            data.updatedAt ||
+            new Date().toISOString()
+          ).slice(0, 10);
+
+        updated++;
+      } catch (error) {
+        console.error(
+          `Falha em ${fund.ticker}:`,
+          error
+        );
+
+        failed++;
+      }
+    }
+
+    persist();
+
+    alert(
+      `${updated} FII(s) atualizado(s). ` +
+      `${failed} falha(s).`
+    );
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+}
 const sample={settings:{contribution:250,wDY:.4,wPerf:.4,wPVP:.2,deviation:.02,trigger:.1,planDY:.08,appreciation:.04,annualIncrease:.1},funds:[['CPTS11','Papel/Multiestratégia','core',7.51,.1433,.1466,.87,.30],['VGIR11','Papel/CRI','core',9.69,.1558,.1703,.99,.25],['KNSC11','Papel/CRI','core',9.01,.1276,.184,1.03,.20],['MXRF11','Papel/Híbrido','core',9.19,.13,.0686,.99,.15],['GARE11','Tijolo/Híbrido','core',8.34,.1194,.0221,.92,.10],['BTCI11','Papel/CRI','alt',9.30,.1263,.1355,.92,0],['VCRI11','Papel/CRI','alt',7.56,.1462,.2393,.80,0]].map((x,i)=>({id:crypto.randomUUID(),ticker:x[0],type:x[1],group:x[2],price:x[3],dy:x[4],perf:x[5],pvp:x[6],target:x[7],source:'Status Invest',updated:'2026-09-05'})),moves:[]};
 let db=JSON.parse(localStorage.getItem('fiiSmart')||'null')||structuredClone(sample);const money=v=>Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}),pct=v=>(100*Number(v||0)).toFixed(1).replace('.',',')+'%',num=v=>Number(v||0);function persist(){localStorage.setItem('fiiSmart',JSON.stringify(db));render()}
 function calc(){let total=0;db.funds.forEach(f=>{let mm=db.moves.filter(m=>m.ticker===f.ticker&&m.kind==='compra');f.qty=mm.reduce((s,m)=>s+num(m.qty),0);f.invested=mm.reduce((s,m)=>s+num(m.qty)*num(m.price),0);f.market=f.qty*f.price;total+=f.market});let dys=db.funds.map(f=>f.dy),perfs=db.funds.map(f=>f.perf),pvps=db.funds.map(f=>f.pvp),minP=Math.min(...perfs),maxP=Math.max(...perfs),minV=Math.min(...pvps),maxV=Math.max(...pvps),maxDY=Math.max(...dys);db.funds.forEach(f=>{f.weight=total?f.market/total:0;let a=maxDY?f.dy/maxDY:0,b=maxP===minP?0:(f.perf-minP)/(maxP-minP),c=maxV===minV?0:(maxV-f.pvp)/(maxV-minV);f.score=db.settings.wDY*a+db.settings.wPerf*b+db.settings.wPVP*c;f.priority=Math.max(0,f.target-f.weight)*f.score});let cores=db.funds.filter(f=>f.group==='core'),bestCore=Math.max(0,...cores.map(f=>f.score));db.funds.forEach(f=>{if(f.group==='core'){f.decision=f.weight<f.target-db.settings.deviation?'COMPRAR':f.weight>f.target+db.settings.deviation?'REDUZIR':'MANTER';f.decisionScore=f.priority}else{f.decision=f.score>Math.min(...cores.map(x=>x.score))+db.settings.trigger?'CONSIDERAR ENTRADA':'MONITORAR';f.decisionScore=f.score>=bestCore+db.settings.trigger?f.score:0}});let eligible=db.funds.filter(f=>f.decisionScore>0).sort((a,b)=>b.decisionScore-a.decisionScore);return {total,reco:eligible[0],income:db.funds.reduce((s,f)=>s+f.market*f.dy/12,0)}}
 function render(){let c=calc();today.textContent=new Date().toLocaleDateString('pt-BR',{dateStyle:'long'});heroTicker.textContent=c.reco?.ticker||'--';heroValue.textContent=money(db.settings.contribution);heroReason.textContent=c.reco?(c.reco.group==='alt'?'Alternativo superou o núcleo + gatilho':'Maior prioridade abaixo do alvo'):'Cadastre sua carteira';kpis.innerHTML=[['Patrimônio',money(c.total)],['Renda estimada',money(c.income)+'/mês'],['FIIs',db.funds.length],['Aporte',money(db.settings.contribution)]].map(x=>`<div class="card kpi"><span class="muted">${x[0]}</span><b>${x[1]}</b></div>`).join('');let ranked=[...db.funds].sort((a,b)=>b.score-a.score);ranking.innerHTML=ranked.map((f,i)=>`<tr><td><div class="rank">${i+1}</div></td><td><strong>${f.ticker}</strong><div class="muted">${f.type}</div></td><td>${money(f.price)}</td><td>${pct(f.dy)}</td><td>${f.pvp.toFixed(2).replace('.',',')}x</td><td>${pct(f.weight)}</td><td class="good">${f.score.toFixed(3)}</td><td class="${f.decision.includes('COMPRAR')||f.decision.includes('ENTRADA')?'good':f.decision==='REDUZIR'?'bad':'warn'}">${f.decision}</td></tr>`).join('');portfolioList.innerHTML=db.funds.map(f=>`<div class="card" style="margin-bottom:10px;display:flex;justify-content:space-between;gap:10px;align-items:center"><div><h3>${f.ticker}</h3><div class="muted">${f.type} · ${f.group==='core'?'Núcleo':'Alternativo'}</div><div style="margin-top:7px">${f.qty.toFixed(0)} cotas · ${money(f.market)} · alvo ${pct(f.target)}</div></div><div><button class="btn alt" onclick="openFund('${f.id}')">Editar</button></div></div>`).join('')||'<div class="empty">Nenhum FII cadastrado.</div>';movesList.innerHTML=[...db.moves].reverse().map(m=>`<tr><td>${new Date(m.date+'T12:00').toLocaleDateString('pt-BR')}</td><td><strong>${m.ticker}</strong></td><td>${m.kind}</td><td>${m.qty||'-'}</td><td>${m.kind==='compra'?money(m.qty*m.price):'-'}</td><td>${money(m.income)}</td><td><button class="btn danger" onclick="delMove('${m.id}')">×</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">Nenhuma movimentação.</td></tr>';renderSettings()}
 const field=(id,label,type='number',value='',extra='')=>`<div class="field"><label for="${id}">${label}</label><input id="${id}" type="${type}" value="${value}" ${extra}></div>`;function renderSettings(){let s=db.settings;settingsForm.innerHTML=field('s_contribution','Aporte mensal (R$)','number',s.contribution,'step="0.01"')+field('s_wDY','Peso do DY','number',s.wDY,'step="0.05"')+field('s_wPerf','Peso da valorização','number',s.wPerf,'step="0.05"')+field('s_wPVP','Peso do P/VP','number',s.wPVP,'step="0.05"')+field('s_deviation','Desvio do alvo','number',s.deviation,'step="0.01"')+field('s_trigger','Gatilho alternativo','number',s.trigger,'step="0.01"')}
-let editId=null;function openFund(id=''){editId=id;let f=db.funds.find(x=>x.id===id)||{ticker:'',type:'Papel/CRI',group:'core',price:0,dy:0,perf:0,pvp:1,target:0,source:'',updated:new Date().toISOString().slice(0,10)};fundTitle.textContent=id?'Editar FII':'Adicionar FII';fundForm.innerHTML=field('f_ticker','Ticker','text',f.ticker,'maxlength="8"')+field('f_type','Tipo','text',f.type)+`<div class="field"><label>Grupo</label><select id="f_group"><option value="core" ${f.group==='core'?'selected':''}>Núcleo</option><option value="alt" ${f.group==='alt'?'selected':''}>Alternativo</option></select></div>`+field('f_price','Preço atual (R$)','number',f.price,'step="0.01"')+field('f_dy','DY 12M (decimal: 0,14 = 14%)','number',f.dy,'step="0.0001"')+field('f_perf','Valorização 12M (decimal)','number',f.perf,'step="0.0001"')+field('f_pvp','P/VP','number',f.pvp,'step="0.01"')+field('f_target','Peso-alvo (decimal)','number',f.target,'step="0.01"')+field('f_source','Fonte','text',f.source)+field('f_updated','Data dos dados','date',f.updated);fundDialog.showModal()}
+let editId=null;function openFund(id=''){editId=id;let f=db.funds.find(x=>x.id===id)||{ticker:'',type:'Papel/CRI',group:'core',price:0,dy:0,perf:0,pvp:1,target:0,source:'',updated:new Date().toISOString().slice(0,10)};fundTitle.textContent=id?'Editar FII':'Adicionar FII';fundForm.innerHTML=field('f_ticker','Ticker','text',f.ticker,'maxlength="8"')+field('f_type','Tipo','text',f.type)+`<div class="field"><label>Grupo</label><select id="f_group"><option value="core" ${f.group==='core'?'selected':''}>Núcleo</option><option value="alt" ${f.group==='alt'?'selected':''}>Alternativo</option></select></div>`+field('f_price','Preço atual (R$)','number',f.price,'step="0.01"')+field('f_dy','DY 12M (decimal: 0,14 = 14%)','number',f.dy,'step="0.0001"')+field('f_perf','Valorização 12M (decimal)','number',f.perf,'step="0.0001"')+field('f_pvp','P/VP','number',f.pvp,'step="0.01"')+field('f_target','Peso-alvo (decimal)','number',f.target,'step="0.01"')+field('f_source','Fonte','text',f.source)+field('f_updated','Data dos dados','date',f.updated);fundDialog.showModal()+ `
+<div style="grid-column: 1 / -1">
+  <button
+    id="fetchFundButton"
+    type="button"
+    class="btn alt"
+    onclick="updateFundFormFromApi()"
+  >
+    ↻ Buscar preço e indicadores
+  </button>
+</div>
+`}
 function saveFund(){let ticker=f_ticker.value.trim().toUpperCase();if(!ticker)return alert('Informe o ticker.');if(!editId&&db.funds.some(f=>f.ticker===ticker))return alert('Esse FII já existe.');let obj={id:editId||crypto.randomUUID(),ticker,type:f_type.value.trim(),group:f_group.value,price:num(f_price.value),dy:num(f_dy.value),perf:num(f_perf.value),pvp:num(f_pvp.value),target:num(f_target.value),source:f_source.value.trim(),updated:f_updated.value};if(editId)db.funds[db.funds.findIndex(f=>f.id===editId)]=obj;else db.funds.push(obj);fundDialog.close();persist()}
 function openMovement(aporte){let c=calc(),t=aporte&&c.reco?c.reco.ticker:(db.funds[0]?.ticker||'');moveForm.innerHTML=`<div class="field"><label>Ativo</label><select id="m_ticker">${db.funds.map(f=>`<option ${f.ticker===t?'selected':''}>${f.ticker}</option>`).join('')}</select></div>`+`<div class="field"><label>Tipo</label><select id="m_kind"><option value="compra">Compra</option><option value="rendimento">Rendimento</option></select></div>`+field('m_date','Data','date',new Date().toISOString().slice(0,10))+field('m_qty','Quantidade','number',aporte&&c.reco?Math.floor(db.settings.contribution/c.reco.price):0,'step="1"')+field('m_price','Preço por cota','number',c.reco?.price||0,'step="0.01"')+field('m_income','Rendimento recebido','number',0,'step="0.01"');moveDialog.showModal()}
 function saveMove(){db.moves.push({id:crypto.randomUUID(),ticker:m_ticker.value,kind:m_kind.value,date:m_date.value,qty:num(m_qty.value),price:num(m_price.value),income:num(m_income.value)});moveDialog.close();persist()}function delMove(id){db.moves=db.moves.filter(m=>m.id!==id);persist()}function saveSettings(){let keys=['contribution','wDY','wPerf','wPVP','deviation','trigger'];keys.forEach(k=>db.settings[k]=num(document.getElementById('s_'+k).value));persist();alert('Parâmetros salvos.')}function exportData(){let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db,null,2)],{type:'application/json'}));a.download='backup-fii-smart.json';a.click()}function importData(e){let r=new FileReader();r.onload=()=>{try{db=JSON.parse(r.result);persist()}catch{alert('Arquivo inválido.')}};r.readAsText(e.target.files[0])}function resetData(){if(confirm('Restaurar os dados de exemplo?')){db=structuredClone(sample);persist()}}
