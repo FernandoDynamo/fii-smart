@@ -2,7 +2,7 @@
   "id": "./",
   "name": "FII Smart - Carteira e Aportes",
   "short_name": "FII Smart",
-  "description": "Acompanhamento, ranking e decisão de aportes em fundos imobiliários.",
+  "description": "Acompanhamento, ranking e descoberta de fundos imobiliários.",
   "start_url": "./?source=pwa",
   "scope": "./",
   "display": "standalone",
